@@ -52,15 +52,11 @@ def get_weather_data(city_name: str,
         base_url = 'https://archive-api.open-meteo.com/v1/archive?' 
         
     response = requests.get(base_url, params=params)
-
     response_json = response.json()
-
+    
     some_metadata = {key: response_json[key] for key in ('latitude', 'longitude',
                                                          'timezone', 'hourly_units')}
-    
-    
     res_df = pd.DataFrame(response_json["hourly"])
-    
     res_df["forecast_hr"] = 0
     
     if forecast:
@@ -123,7 +119,7 @@ def data_preparation(weather_fg):
     return observations_batch, forecast_batch
 
 
-project = hopsworks.login()
+project = hopsworks.login(project='weather')
 
 fs = project.get_feature_store() 
   
