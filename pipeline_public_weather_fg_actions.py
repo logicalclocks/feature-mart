@@ -1,11 +1,11 @@
 # Imports
 import requests
 import datetime
+import json
 
 import pandas as pd
 
 import hopsworks
-from geopy.geocoders import Nominatim
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -20,33 +20,20 @@ def convert_date_to_unix(x):
     return dt_obj
 
 
-def get_city_coordinates(city_name: str):
-    """
-    Takes city name and returns its latitude and longitude (rounded to 2 digits after dot).
-    """    
-    # Initialize Nominatim API (for getting lat and long of the city)
-    geolocator = Nominatim(user_agent="MyApp")
-    city = geolocator.geocode(city_name)
-
-    latitude = round(city.latitude, 2)
-    longitude = round(city.longitude, 2)
-    
-    return latitude, longitude
-
-
 def get_weather_data(city_name: str,
+                     coordinates: list,
                      start_date: str = None,
                      end_date: str = None,
                      forecast: bool = False):
     """
-    Takes city name and returns pandas DataFrame with weather data.
+    Takes city name, coordinates and returns pandas DataFrame with weather data.
     
     'start_date' and 'end_date' are required if you parse historical observations data. (forecast=False)
     
     If forecast=True - returns 7 days forecast data by default (without specifying daterange).
     """
     
-    latitude, longitude = get_city_coordinates(city_name=city_name)
+    latitude, longitude = coordinates
     
     params = {
         'latitude': latitude,
@@ -65,14 +52,11 @@ def get_weather_data(city_name: str,
         base_url = 'https://archive-api.open-meteo.com/v1/archive?' 
         
     response = requests.get(base_url, params=params)
-
     response_json = response.json()
-
+    
     some_metadata = {key: response_json[key] for key in ('latitude', 'longitude',
                                                          'timezone', 'hourly_units')}
-    
     res_df = pd.DataFrame(response_json["hourly"])
-    
     res_df["forecast_hr"] = 0
     
     if forecast:
@@ -105,19 +89,8 @@ def get_weather_data(city_name: str,
 
 
 def data_preparation(weather_fg):
-    # Define required cities
-    city_names = [
-        'Kyiv',
-        'London',
-        'Paris',
-        'Stockholm',
-        'New_York',
-        'Los_Angeles',
-        'Singapore',
-        'Sydney',
-        'Hong_Kong',
-        'Rome'
-    ]
+    with open('target_cities.json') as json_file:
+        target_cities = json.load(json_file)
 
     # Get date parameters
     today = datetime.date.today() # datetime object
@@ -127,17 +100,20 @@ def data_preparation(weather_fg):
 
     # Parse and insert updated data from observations endpoint
     observations_batch = pd.DataFrame()
-    for city_name in city_names:
-        weather_df_temp, metadata_temp = get_weather_data(city_name, forecast=False,
-                                                            start_date=day7ago, end_date=day7ago)
+    
+    for city_name in target_cities:
+        weather_df_temp, metadata_temp = get_weather_data(city_name, target_cities[city_name],
+                                                          forecast=False,
+                                                          start_date=day7ago, end_date=day7ago)
         observations_batch = pd.concat([observations_batch, weather_df_temp])
         
     # Parse and insert new data from forecast endpoint for new day in future
     forecast_batch = pd.DataFrame()
-
-    for city_name in city_names:
-        weather_df_temp, metadata_temp = get_weather_data(city_name, forecast=True,
-                                                            start_date=day7next, end_date=day7next)
+    
+    for city_name in target_cities:
+        weather_df_temp, metadata_temp = get_weather_data(city_name, target_cities[city_name],
+                                                          forecast=True,
+                                                          start_date=day7next, end_date=day7next)
         forecast_batch = pd.concat([forecast_batch, weather_df_temp])
 
     return observations_batch, forecast_batch
